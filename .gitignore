@@ -1,0 +1,31 @@
+# Игнорируем файлы конфигурации с чувствительными данными
+.env
+
+# Кеши и временные файлы Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Логи
+logs/
+*.log
+
+# Файлы виртуального окружения
+venv/
+.env/
+.venv/
+pip-log.txt
+pip-delete-this-directory.txt
+
+# Игнорируем файлы Docker
+*.tar
+docker-compose.override.yml
+
+# Игнорируем артефакты IDE (например, PyCharm, VSCode)
+.vscode/
+.idea/
+*.iml
+
+# Игнорируем systemd логи
+systemd/*.log

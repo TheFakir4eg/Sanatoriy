@@ -1,8 +1,9 @@
 import telebot
 from telebot import types
+import os
 
-token = '7811978605:AAHVFJWvZKc41l_eU-JZr17-ZwZkvoOByqE'
-bot = telebot.TeleBot(token)
+TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")  # Используем переменную окружения для токена
+bot = telebot.TeleBot(TOKEN)
 
 # Главное меню
 def main_menu():
