@@ -1,9 +1,109 @@
 import telebot
 from telebot import types
 import os
+import requests
+import logging
 
 TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")  # Используем переменную окружения для токена
+BITRIX_WEBHOOK_URL = os.getenv("BITRIX_WEBHOOK_URL")  # Вебхук Битрикс24
+OPENLINE_ID = os.getenv("BITRIX_OPENLINE_ID")  # ID открытой линии Битрикс24
+
 bot = telebot.TeleBot(TOKEN)
+
+# Логирование
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+# Словарь соответствия пользователей и чатов в Битрикс24
+user_sessions = {}
+
+# Функция отправки сообщения в Битрикс24
+def send_to_bitrix(chat_id, message_text):
+    user_info = bot.get_chat(chat_id)  # Получаем информацию о пользователе
+    
+    # Проверяем, есть ли у пользователя открытый диалог
+    if chat_id not in user_sessions:
+        response = requests.get(f"{BITRIX_WEBHOOK_URL}imopenlines.dialog.list.json")
+        if response.status_code == 200 and "result" in response.json():
+            # Создаём новый чат с пользователем
+            data = {
+                "USER_ID": f"telegram_{chat_id}",
+                "LINE_ID": OPENLINE_ID,
+                "USERNAME": user_info.first_name,
+                "AVATAR": user_info.photo if user_info.photo else ""
+            }
+            chat_response = requests.post(f"{BITRIX_WEBHOOK_URL}imopenlines.dialog.add.json", json=data)
+            if chat_response.status_code == 200 and "result" in chat_response.json():
+                user_sessions[chat_id] = chat_response.json()["result"]["DIALOG_ID"]
+
+    # Отправляем сообщение в чат
+    if chat_id in user_sessions:
+        message_data = {
+            "DIALOG_ID": user_sessions[chat_id],
+            "MESSAGE": message_text
+        }
+        response = requests.post(f"{BITRIX_WEBHOOK_URL}imopenlines.message.add.json", json=message_data)
+
+        if response.status_code == 200:
+            return True
+        else:
+            logger.error(f"Ошибка при отправке в Битрикс24: {response.text}")
+            return False
+
+# Обработчик текстовых сообщений
+@bot.message_handler(content_types=['text'])
+def handle_text_message(message):
+    chat_id = message.chat.id
+    text = message.text
+
+    # Отправляем сообщение в Битрикс24
+    if send_to_bitrix(chat_id, text):
+        bot.send_message(chat_id, "Ваше сообщение передано оператору Битрикс24. Ожидайте ответа.")
+    else:
+        bot.send_message(chat_id, "Ошибка при отправке в Битрикс24. Попробуйте позже.")
+
+# Обработчик фото и документов
+@bot.message_handler(content_types=['photo', 'document'])
+def handle_media_message(message):
+    chat_id = message.chat.id
+
+    if message.content_type == 'photo':
+        file_id = message.photo[-1].file_id  # Берем фото в наилучшем качестве
+    else:
+        file_id = message.document.file_id
+
+    file_info = bot.get_file(file_id)
+    file_url = f"https://api.telegram.org/file/bot{TOKEN}/{file_info.file_path}"
+
+    message_text = f"📎 Пользователь отправил файл: {file_url}"
+
+    if send_to_bitrix(chat_id, message_text):
+        bot.send_message(chat_id, "Файл передан оператору Битрикс24.")
+    else:
+        bot.send_message(chat_id, "Ошибка при отправке файла в Битрикс24.")
+
+# Обработчик ответов из Битрикс24
+def get_messages_from_bitrix():
+    response = requests.get(f"{BITRIX_WEBHOOK_URL}imopenlines.message.get.json")
+
+    if response.status_code == 200 and "result" in response.json():
+        messages = response.json()["result"]
+
+        for msg in messages:
+            user_id = msg["USER_ID"]
+            text = msg["MESSAGE"]
+
+            # Ищем пользователя в Telegram
+            for chat_id, dialog_id in user_sessions.items():
+                if dialog_id == user_id:
+                    bot.send_message(chat_id, f"👨‍💼 Оператор: {text}")
+
+# Функция для проверки новых сообщений
+def check_new_messages():
+    while True:
+        get_messages_from_bitrix()
+        time.sleep(10)  # Проверяем каждые 10 секунд
+
 
 # Главное меню
 def main_menu():
